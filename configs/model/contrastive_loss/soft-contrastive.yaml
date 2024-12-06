@@ -1,0 +1,6 @@
+_target_: src.model.losses.SoftContrastiveLoss
+
+margin: 0.2
+max_violation: false
+threshold_hetero: 0.75
+threshold_homo: 0.75

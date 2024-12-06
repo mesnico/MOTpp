@@ -1,0 +1,9 @@
+_target_: src.model.losses.InfoNCECrossConsistent
+max_violation_after: 15
+single_modal_space_dim: 256
+lambda_start_epoch: 40
+lambda_end_epoch: 100
+infonce_loss_fn: null
+temperature: 0.1
+cross_consistent_type: kldiv
+use_length_as_pseudo_motion_label: True

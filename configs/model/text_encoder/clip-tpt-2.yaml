@@ -1,0 +1,4 @@
+_target_: src.model.texts.CLIPTPT
+latent_dim: ${common_space_dim}
+num_prompt_tokens: 2
+vae: true

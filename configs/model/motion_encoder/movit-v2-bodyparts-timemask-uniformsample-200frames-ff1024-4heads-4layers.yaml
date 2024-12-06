@@ -1,0 +1,20 @@
+
+_target_: src.model.motions.MoViT_v2
+num_frames: 200
+embed_dims: 256
+ff_dims: 1024
+num_heads: 4
+num_transformer_layers: 2
+dropout_p: 0.1
+tube_size: 1
+attention_type: 'divided_space_time'
+use_learnable_pos_emb_spatial: True
+use_learnable_pos_emb_temporal: False
+body_repres: 'body-parts'
+use_time_padding_mask: True
+use_skeleton_connection_mask: False
+uniform_sample: True
+data_rep: ${data_rep}
+dataset: humanml
+latent_dim: ${common_space_dim}
+vae: true

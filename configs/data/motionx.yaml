@@ -1,0 +1,13 @@
+defaults:
+  - _base@train
+  - _base@val
+  - _base@test
+  - _self_
+
+train:
+  split: train
+  max_seconds: 13.0
+
+val:
+  split: val
+  max_seconds: 13.0

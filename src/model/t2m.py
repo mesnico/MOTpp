@@ -1,0 +1,289 @@
+from typing import Dict, Optional
+from torch import Tensor
+
+import torch
+import torch.nn as nn
+
+from retrieval import compute_sim_matrix
+
+from .temos import TEMOS
+from .losses.tmr_losses import InfoNCE_with_filtering
+from .losses.regression_loss import GaussianRegressionLoss
+from .texts import CLIPTPT
+from .metrics import all_contrastive_metrics
+
+import gc
+
+
+# x.T will be deprecated in pytorch
+def transpose(x):
+    return x.permute(*torch.arange(x.ndim - 1, -1, -1))
+
+
+def get_sim_matrix(x, y):
+    x_logits = torch.nn.functional.normalize(x, dim=-1)
+    y_logits = torch.nn.functional.normalize(y, dim=-1)
+    sim_matrix = x_logits @ transpose(y_logits)
+    return sim_matrix
+
+
+# Scores are between 0 and 1
+def get_score_matrix(x, y):
+    sim_matrix = get_sim_matrix(x, y)
+    scores = sim_matrix / 2 + 0.5
+    return scores
+
+
+class T2M(TEMOS):
+    r"""T2M: Text-to-Motion Retrieval
+    Using Contrastive 3D Human Motion Synthesis
+    Find more information about the model on the following website:
+    https://mathis.petrovich.fr/tmr
+
+    Args:
+        motion_encoder: a module to encode the input motion features in the latent space (required).
+        text_encoder: a module to encode the text embeddings in the latent space (required).
+        motion_decoder: a module to decode the latent vector into motion features (required).
+        vae: a boolean to make the model probabilistic (required).
+        fact: a scaling factor for sampling the VAE (optional).
+        sample_mean: sample the mean vector instead of random sampling (optional).
+        lmd: dictionary of losses weights (optional).
+        lr: learninig rate for the optimizer (optional).
+        temperature: temperature of the softmax in the contrastive loss (optional).
+        threshold_selfsim_metrics: threshold used to filter wrong negatives for the metrics (optional).
+    """
+
+    def __init__(
+        self,
+        motion_encoder: nn.Module,
+        text_encoder: nn.Module,
+        motion_decoder: nn.Module,
+        contrastive_loss: nn.Module,
+        vae: bool,
+        length_regressor: nn.Module = None,
+        fact: Optional[float] = None,
+        sample_mean: Optional[bool] = False,
+        lmd: Dict = {"recons": 1.0, "latent": 1.0e-5, "kl": 1.0e-5, "contrastive": 0.1},
+        lr: float = 1e-4,
+        threshold_selfsim_metrics: float = 0.95,
+    ) -> None:
+        # Initialize module like TEMOS
+        super().__init__(
+            motion_encoder=motion_encoder,
+            text_encoder=text_encoder,
+            motion_decoder=motion_decoder,
+            vae=vae,
+            fact=fact,
+            sample_mean=sample_mean,
+            lmd=lmd,
+            lr=lr,
+        )
+
+        # adding the contrastive loss
+        self.contrastive_loss_fn = contrastive_loss
+        self.threshold_selfsim_metrics = threshold_selfsim_metrics
+
+        # store validation values to compute retrieval metrics
+        # on the whole validation set
+        self.validation_step_t_latents = []
+        self.validation_step_m_latents = []
+        self.validation_step_sent_emb = []
+        self.length_regression_absolute_errors = []
+        self.length_regression_variances = []
+
+        # adding motion_length_regressor
+        self.motion_length_regressor = length_regressor
+        self.motion_length_regressor_loss = GaussianRegressionLoss()
+
+    def encode(
+        self,
+        inputs,
+        modality: str = "auto",
+        sample_mean: Optional[bool] = None,
+        fact: Optional[float] = None,
+        return_distribution: bool = False,
+    ):
+        sample_mean = self.sample_mean if sample_mean is None else sample_mean
+        fact = self.fact if fact is None else fact
+
+        # Encode the inputs
+        encoder = self._find_encoder(inputs, modality)        
+        encoded = encoder(inputs)
+
+        # Sampling
+        if self.vae:
+            dists = encoded.unbind(1)
+            mu, logvar = dists
+            if sample_mean:
+                latent_vectors = mu
+            else:
+                # Reparameterization trick
+                std = logvar.exp().pow(0.5)
+                eps = std.data.new(std.size()).normal_()
+                latent_vectors = mu + fact * eps * std
+        else:
+            dists = None
+            (latent_vectors,) = encoded.unbind(1)
+
+        if return_distribution:
+            return latent_vectors, dists
+
+        return latent_vectors
+
+    def compute_loss(self, batch: Dict, return_all=False) -> Dict:
+        text_x_dict = batch["text_x_dict"]
+        motion_x_dict = batch["motion_x_dict"]
+
+        mask = motion_x_dict["mask"]
+        ref_motions = motion_x_dict["x"]
+
+        # sentence embeddings
+        sent_emb = batch["sent_emb"]
+
+        # text -> motion
+        t_motions, t_latents, t_dists = self(text_x_dict, mask=mask, return_all=True)
+
+        # motion -> motion
+        m_motions, m_latents, m_dists = self(motion_x_dict, mask=mask, return_all=True)
+
+        # Store all losses
+        losses = {}
+
+        # Reconstructions losses
+        # fmt: off
+        losses["recons"] = (
+            + self.reconstruction_loss_fn(t_motions, ref_motions) # text -> motion
+            + self.reconstruction_loss_fn(m_motions, ref_motions) # motion -> motion
+        )
+        # fmt: on
+
+        # VAE losses
+        if self.vae:
+            # Create a centred normal distribution to compare with
+            # logvar = 0 -> std = 1
+            ref_mus = torch.zeros_like(m_dists[0])
+            ref_logvar = torch.zeros_like(m_dists[1])
+            ref_dists = (ref_mus, ref_logvar)
+
+            losses["kl"] = (
+                self.kl_loss_fn(t_dists, m_dists)  # text_to_motion
+                + self.kl_loss_fn(m_dists, t_dists)  # motion_to_text
+                + self.kl_loss_fn(m_dists, ref_dists)  # motion
+                + self.kl_loss_fn(t_dists, ref_dists)  # text
+            )
+
+        # Latent manifold loss
+        losses["latent"] = self.latent_loss_fn(t_latents, m_latents)
+
+        # TMR: adding the contrastive loss
+        lengths = torch.FloatTensor(motion_x_dict["length"]).to(m_latents.device)
+        losses["contrastive"] = self.contrastive_loss_fn(t_latents, m_latents, sent_emb, epoch=self.current_epoch, gt_lengths=lengths)
+
+        if self.motion_length_regressor is not None:
+            # text -> motion length
+            est_motion_length = self.motion_length_regressor(t_latents)
+            # T2M: adding the motion length regression loss
+            motion_length = torch.FloatTensor(motion_x_dict["length"]).to(t_latents.device)
+            # Normalize the motion length
+            motion_length = self.motion_length_regressor.normalize(motion_length)
+            losses["motion_length"] = self.motion_length_regressor_loss(est_motion_length, motion_length)
+            est_motion_length = self.motion_length_regressor.denormalize(est_motion_length)
+
+        # Weighted average of the losses
+        losses["loss"] = sum(
+            self.lmd[x] * val for x, val in losses.items() if x in self.lmd
+        )
+
+        # Used for the validation step
+        if return_all:
+            abs_error = None # torch.abs(est_motion_length[:, 0] - motion_length)
+            est_variance = None # est_motion_length[:, 1]
+            return losses, t_latents, m_latents, abs_error, est_variance
+
+        return losses
+
+    def validation_step(self, batch: Dict, batch_idx: int) -> Tensor:
+        bs = len(batch["motion_x_dict"]["x"])
+        losses, t_latents, m_latents, abs_error, est_variance = self.compute_loss(batch, return_all=True)
+
+        # Store the latent vectors
+        self.validation_step_t_latents.append(t_latents)
+        self.validation_step_m_latents.append(m_latents)
+        self.validation_step_sent_emb.append(batch["sent_emb"])
+        self.length_regression_absolute_errors.append(abs_error)
+        self.length_regression_variances.append(est_variance)
+
+        for loss_name in sorted(losses):
+            loss_val = losses[loss_name]
+            self.log(
+                f"val_{loss_name}",
+                loss_val,
+                on_epoch=True,
+                on_step=True,
+                batch_size=bs,
+            )
+
+        return losses["loss"]
+
+    def on_validation_epoch_end(self):
+        # abs_errors = torch.cat(self.length_regression_absolute_errors)
+        # variances = torch.cat(self.length_regression_variances)
+
+        dataset = self.trainer.val_dataloaders.dataset
+        self.eval()
+        res = compute_sim_matrix(
+            self, dataset, dataset.keyids, batch_size=64
+        )
+        contrastive_metrics = all_contrastive_metrics(
+            res['sim_matrix'],
+            emb=res["sent_emb"],
+            threshold=self.threshold_selfsim_metrics,
+        )
+
+        # for recall validation metrics, ignore recall@1, recall@2, given that they are quite unstable
+        contrastive_metrics['rsum'] = sum([v for k, v in contrastive_metrics.items() if '/R' in k]) #and int(k.split('/R')[-1]) >= 3])
+        contrastive_metrics['rsum-t2m'] = sum([v for k, v in contrastive_metrics.items() if 't2m/R' in k]) #and int(k.split('/R')[-1]) >= 3])
+        contrastive_metrics['medr'] = sum([v for k, v in contrastive_metrics.items() if '/MedR' in k])
+
+        for loss_name in sorted(contrastive_metrics):
+            loss_val = contrastive_metrics[loss_name]
+            self.log(
+                f"val_{loss_name}_epoch",
+                loss_val,
+                on_epoch=True,
+                on_step=False,
+            )
+
+        # self.log(f"val_motion_length_abs_error", abs_errors.mean(), on_epoch=True, on_step=False)
+        # self.log(f"val_motion_length_variance", variances.mean(), on_epoch=True, on_step=False)
+
+        self.validation_step_t_latents.clear()
+        self.validation_step_m_latents.clear()
+        self.validation_step_sent_emb.clear()
+        self.length_regression_absolute_errors.clear()
+        self.length_regression_variances.clear()
+
+        # garbage collection by calling garbage collector
+        gc.collect()
+
+        self.train()
+
+    def on_train_end(self) -> None:
+        torch.cuda.empty_cache()
+        gc.collect()
+
+    def configure_optimizers(self) -> None:
+        # get all parameters of the model (self) except the ones from the language model (self.text_encoder)
+        if isinstance(self.text_encoder, CLIPTPT):
+            all_params = dict(self.named_parameters())
+            text_encoder_params = self.text_encoder.clip_model.named_parameters()
+            text_encoder_params = {'text_encoder.clip_model.' + k: v for k, v in text_encoder_params}
+            shallow_tpt_params = self.text_encoder.clip_model.prompt_tokens_module.parameters()
+
+            # filter out the text_encoder parameters from all parameters and readd only the shallow_tpt_params
+            main_params = [p for n, p in all_params.items() if n not in text_encoder_params]
+            params = [{'params': main_params}, {'params': shallow_tpt_params}]
+            # params += list(shallow_tpt_params)
+        else:
+            params = self.parameters()
+        return {"optimizer": torch.optim.AdamW(lr=self.lr, params=params)}

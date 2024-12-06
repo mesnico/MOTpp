@@ -1,0 +1,3 @@
+_target_: src.model.losses.InfoNCE_with_filtering
+temperature: 0.1
+threshold_selfsim: null

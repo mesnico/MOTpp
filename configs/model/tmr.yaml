@@ -1,0 +1,17 @@
+defaults:
+  - common
+  - motion_encoder/actor-style-encoder
+  - text_encoder/actor-style-encoder
+  - contrastive_loss/info-nce-with-filtering
+  - _self_
+
+_target_: src.model.TMR
+
+lmd:
+  recons: 1.0
+  latent: 1.0e-5
+  kl: 1.0e-5
+  contrastive: 0.1
+
+lr: 1e-4
+threshold_selfsim_metrics: 0.95

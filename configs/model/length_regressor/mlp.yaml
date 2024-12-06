@@ -1,0 +1,4 @@
+_target_: src.model.MLPLengthRegressor
+text_dim: ${common_space_dim}
+hidden_dim: 512
+mean_std_file: stats/${hydra:runtime.choices.data}/length/mean_std.npy

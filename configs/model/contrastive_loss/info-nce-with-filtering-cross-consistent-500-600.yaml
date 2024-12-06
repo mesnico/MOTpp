@@ -1,0 +1,9 @@
+_target_: src.model.losses.InfoNCECrossConsistent
+max_violation_after: 15
+single_modal_space_dim: 256
+lambda_start_epoch: 500
+lambda_end_epoch: 600
+infonce_loss_fn: 
+  _target_: src.model.losses.InfoNCE_with_filtering
+  temperature: 0.1
+  threshold_selfsim: 0.80

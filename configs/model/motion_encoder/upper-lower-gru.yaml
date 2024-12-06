@@ -1,0 +1,7 @@
+_target_: src.model.motions.UpperLowerGRU
+h1: 32
+h2: 128
+h3: 256
+data_rep: ${data_rep}
+dataset: humanml
+latent_dim: ${common_space_dim}

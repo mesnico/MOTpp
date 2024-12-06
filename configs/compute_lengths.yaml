@@ -1,0 +1,38 @@
+ckpt: best-rsum
+resume_dir: null
+
+# run_dir: outputs/${hydra:runtime.choices.model}_${hydra:runtime.choices.data}_${hydra:runtime.choices.data/motion_loader}
+
+dataloader:
+  _target_: torch.utils.data.DataLoader
+  batch_size: 32
+  num_workers: 0
+
+data_rep: cont_6d_plus_rifke_vels
+common_space_dim: 256
+debug: true
+splits: 
+  - train
+  - val
+  - test
+output: outputs/lengths/${hydra:runtime.choices.data}_mean_std.npy
+
+hydra:
+  run:
+    dir: test
+  job:
+    config:
+      override_dirname:
+        item_sep: /
+        exclude_keys:
+          - common_space_dim
+          - data_rep
+
+run_dir: ${hydra:runtime.output_dir}
+
+defaults:
+  - data: kitml
+  - model: tmr
+  - trainer
+  - defaults
+  - _self_

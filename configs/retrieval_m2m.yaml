@@ -1,0 +1,13 @@
+defaults:
+  - defaults
+  - data: ??? # or kitml, is the same in this case (we redefine the data path below)
+  - _self_
+
+device: cuda
+
+run_dir: ???
+protocol: all #  (is all 4), normal (a), threshold (b), nsim (c), guo (d)
+
+ckpt: best-rsum
+batch_size: 256
+skip_already_done: false

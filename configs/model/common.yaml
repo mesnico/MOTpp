@@ -1,0 +1,18 @@
+motion_decoder:
+  _target_: src.model.ACTORStyleDecoder
+  nfeats: ${motion_feats}
+  latent_dim: ${common_space_dim}
+  ff_size: 1024
+  num_layers: 6
+  num_heads: 4
+  dropout: 0.1
+  activation: gelu
+
+vae: true
+
+lmd:
+  recons: 1.0
+  latent: 1.0e-5
+  kl: 1.0e-5
+
+lr: 1e-4

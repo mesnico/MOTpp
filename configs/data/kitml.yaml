@@ -1,0 +1,14 @@
+defaults:
+  - _base@train
+  - _base@val
+  - _base@test
+  - _self_
+
+train:
+  split: train
+
+val:
+  split: val
+
+test:
+  categorical_labels: datasets/annotations/kitml/labels.csv

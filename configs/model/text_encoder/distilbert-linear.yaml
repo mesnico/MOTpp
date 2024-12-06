@@ -1,0 +1,7 @@
+_target_: src.model.texts.DistilbertLinearEncoder
+
+embed_size: 1024
+
+finetune: false
+modelpath: deps/distilbert-base-uncased
+only_return_cls_token: ${model.only_return_cls_token}

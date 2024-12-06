@@ -1,0 +1,26 @@
+defaults:
+  - contrastive_loss: drop_triplet
+  - motion_encoder: transformer_rehamot
+  - text_encoder: distilbert_linear
+  - length_regressor: null
+  - _self_
+
+_target_: src.model.Rehamot
+
+# ['cpsmapping', 'cosine']
+sim:
+  _target_: src.model.CrossPerceptualSalienceMapping # src.model.CosineSim
+only_return_cls_token: false  # true if sim is cosine
+
+# Fine-tune DistilBert
+finetune: false
+
+# Losses
+
+# use MH/DropTriple Loss before epoch [warm_up], If using normal SH Loss, please set warm_up to a number greater than the number of training epochs
+warm_up: 5
+
+lr: 0.0002
+enable_momentum: false
+lr_update: 30
+threshold_selfsim_metrics: 0.95

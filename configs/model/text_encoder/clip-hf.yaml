@@ -1,0 +1,3 @@
+_target_: src.model.texts.CLIPHF
+latent_dim: ${common_space_dim}
+vae: true

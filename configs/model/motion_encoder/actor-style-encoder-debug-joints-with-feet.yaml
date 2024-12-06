@@ -1,0 +1,10 @@
+  _target_: src.model.ACTORStyleEncoder
+  nfeats: ${data.motion_loader.nfeats}
+  vae: true
+  latent_dim: ${common_space_dim}
+  ff_size: 1024
+  num_layers: 6
+  num_heads: 4
+  dropout: 0.1
+  activation: gelu
+  debug_encode_decode_joints: true

@@ -1,0 +1,13 @@
+_target_: src.model.motions.TransformerRehamot
+
+latent_dim: ${common_space_dim}
+embed_size: 1024
+
+ff_size: 1024
+num_layers: 3
+num_heads: 4
+dropout: 0.1
+activation: "gelu"
+
+nfeats: ${motion_feats}
+only_return_cls_token: ${model.only_return_cls_token}

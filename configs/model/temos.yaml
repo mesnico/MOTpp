@@ -1,0 +1,7 @@
+defaults:
+  - _self_
+  - common
+  - motion_encoder/actor-style-encoder
+  - text_encoder/actor-style-encoder
+
+_target_: src.model.TEMOS

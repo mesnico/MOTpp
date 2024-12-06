@@ -1,0 +1,7 @@
+_target_: src.model.motions.BiGRU
+h1: 128
+h2: 256
+data_rep: ${data_rep}
+dataset: humanml
+latent_dim: ${common_space_dim}
+  

@@ -1,0 +1,59 @@
+ckpt: best-rsum
+resume_dir: null
+
+# run_dir: outputs/${hydra:runtime.choices.model}_${hydra:runtime.choices.data}_${hydra:runtime.choices.data/motion_loader}
+
+dataloader:
+  _target_: torch.utils.data.DataLoader
+  batch_size: 32
+  num_workers: 0
+
+data_rep: cont_6d_plus_rifke_vels
+common_space_dim: 256
+motion_feats: 263
+debug: true
+base_dir: runs
+rep: 0
+seed: ${eval:'1234 + ${rep}'}
+
+hydra:
+  run:
+    dir: runs/single/
+            lr=${model.lr}/\
+            model=${hydra:runtime.choices.model}/\
+            data=${hydra:runtime.choices.data}/\
+            length_regressor=${hydra:runtime.choices.model/length_regressor}/\
+            loss=${hydra:runtime.choices.model/contrastive_loss}/\
+            motion=${hydra:runtime.choices.model/motion_encoder}/\
+            text=${hydra:runtime.choices.model/text_encoder}/\
+            data_rep=${data_rep}/\
+            space-dim=${common_space_dim}/\
+            rep=${rep}
+  sweep:
+    dir: ${base_dir}
+    subdir: "lr=${model.lr}/\
+            model=${hydra:runtime.choices.model}/\
+            data=${hydra:runtime.choices.data}/\
+            length_regressor=${hydra:runtime.choices.model/length_regressor}/\
+            loss=${hydra:runtime.choices.model/contrastive_loss}/\
+            motion=${hydra:runtime.choices.model/motion_encoder}/\
+            text=${hydra:runtime.choices.model/text_encoder}/\
+            data_rep=${data_rep}/\
+            space-dim=${common_space_dim}/\
+            rep=${rep}"
+  job:
+    config:
+      override_dirname:
+        item_sep: /
+        exclude_keys:
+          - common_space_dim
+          - data_rep
+
+run_dir: ${hydra:runtime.output_dir}
+
+defaults:
+  - data: humanml3d
+  - model: tmr
+  - trainer
+  - defaults
+  - _self_
