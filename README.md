@@ -13,7 +13,16 @@ Official PyTorch implementation of the paper:
 
 </div>
 
-Feel free to give a star :star: if you find the code helpful.
+If you find this code hewlpful, feel free to give a star :star: and cite the following:
+
+```bibtex
+@article{messina2024joint,
+  title={Joint-Dataset Learning and Cross-Consistent Regularization for Text-to-Motion Retrieval},
+  author={Messina, Nicola and Sedmidubsky, Jan and Falchi, Fabrizio and Rebok, Tom{\'a}{\v{s}}},
+  journal={arXiv preprint arXiv:2407.02104},
+  year={2024}
+}
+```
 
 ## Installation :construction_worker:
 
@@ -60,3 +69,7 @@ Work in progress :memo:
 This code is distributed under an [MIT LICENSE](LICENSE).
 
 Note that our code depends on other libraries, including PyTorch, PyTorch3D, Hugging Face, Hydra, and uses datasets which each have their own respective licenses that must also be followed.
+
+## Acknowledgements
+
+We really thanks the authors of [TMR](https://github.com/Mathux/TMR), on which this code is largely based.
